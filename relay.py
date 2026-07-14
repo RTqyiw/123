@@ -72,8 +72,13 @@ async def handler(websocket):
 
             msg       = data.get("msg", "")
             raw_field = data.get("raw", "")
+            quit      = data.get("quit", False)
 
-            if raw_field:
+            if quit:
+                forward = json.dumps({"quit": True})
+                ts = datetime.datetime.now().strftime("%H:%M:%S")
+                print(f"[{ts}] [{channel}] {nick} >> [QUIT]", flush=True)
+            elif raw_field:
                 forward = json.dumps({"raw": raw_field})
                 ts = datetime.datetime.now().strftime("%H:%M:%S")
                 print(f"[{ts}] [{channel}] {nick} >> [RAW] {raw_field[:60]}", flush=True)
