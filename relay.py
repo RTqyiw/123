@@ -6,8 +6,18 @@ import os
 
 PORT = int(os.environ.get("PORT", 8765))
 
-# channel -> set of websockets
+# канал -> список подключений
 CHANNELS = {}
+
+def now():
+    return datetime.datetime.now().strftime("%H:%M:%S")
+
+def log(msg):
+    print(f"[{now()}] {msg}", flush=True)
+
+def channel_info(channel):
+    count = len(CHANNELS.get(channel, set()))
+    return f"канал '{channel}' [{count} подкл.]"
 
 async def broadcast_peers(channel):
     members = CHANNELS.get(channel, set())
@@ -26,15 +36,15 @@ async def leave_channel(ws, channel, nick):
         CHANNELS[channel].discard(ws)
         if not CHANNELS[channel]:
             del CHANNELS[channel]
+            log(f"Выход: {nick} | {channel_info(channel)} (канал удалён)")
         else:
             await broadcast_peers(channel)
-        ts = datetime.datetime.now().strftime("%H:%M:%S")
-        print(f"[{ts}] [{channel}] -{nick}", flush=True)
+            log(f"Выход: {nick} | {channel_info(channel)}")
 
 async def handler(websocket):
     channel = None
     nick = "?"
-    addr = websocket.remote_address
+    addr = websocket.remote_address[0] if websocket.remote_address else "?"
 
     try:
         async for raw in websocket:
@@ -43,14 +53,13 @@ async def handler(websocket):
             except Exception:
                 data = {"msg": raw}
 
-            # join — смена/вход в канал
+            # Вход в канал
             if "join" in data:
                 new_channel = data.get("join", "").strip()
                 new_nick    = data.get("nick", "?").strip()
                 if not new_channel:
                     continue
 
-                # Выходим из старого канала
                 if channel:
                     await leave_channel(websocket, channel, nick)
 
@@ -61,36 +70,33 @@ async def handler(websocket):
                     CHANNELS[channel] = set()
                 CHANNELS[channel].add(websocket)
 
-                ts = datetime.datetime.now().strftime("%H:%M:%S")
-                print(f"[{ts}] [{channel}] +{nick} ({addr})  members={len(CHANNELS[channel])}", flush=True)
+                count = len(CHANNELS[channel])
+                status = "готово к работе" if count >= 2 else "ожидание второго ПК"
+                log(f"Подключение: {nick} ({addr}) | {channel_info(channel)} | {status}")
                 await broadcast_peers(channel)
                 continue
 
-            # Нет канала — игнорируем
             if not channel:
                 continue
 
             msg       = data.get("msg", "")
             raw_field = data.get("raw", "")
-            quit      = data.get("quit", False)
+            quit_flag = data.get("quit", False)
             inv_field = data.get("inv", "")
 
-            if quit:
+            if quit_flag:
                 forward = json.dumps({"quit": True})
-                ts = datetime.datetime.now().strftime("%H:%M:%S")
-                print(f"[{ts}] [{channel}] {nick} >> [QUIT]", flush=True)
+                log(f"Выход с сервера: {nick} | {channel_info(channel)}")
             elif inv_field:
                 forward = json.dumps({"inv": inv_field})
-                ts = datetime.datetime.now().strftime("%H:%M:%S")
-                print(f"[{ts}] [{channel}] {nick} >> [INV] {len(inv_field)} chars", flush=True)
+                log(f"Инвентарь: {nick} -> {channel_info(channel)} ({len(inv_field)} симв.)")
             elif raw_field:
                 forward = json.dumps({"raw": raw_field})
-                ts = datetime.datetime.now().strftime("%H:%M:%S")
-                print(f"[{ts}] [{channel}] {nick} >> [RAW] {raw_field[:60]}", flush=True)
+                preview = raw_field[:50].replace('\n', ' ')
+                log(f"Служебное: {nick} -> {channel_info(channel)} | {preview}")
             elif msg:
                 forward = json.dumps({"msg": msg})
-                ts = datetime.datetime.now().strftime("%H:%M:%S")
-                print(f"[{ts}] [{channel}] {nick} >> {msg}", flush=True)
+                log(f"Сообщение: {nick} -> {channel_info(channel)} | {msg[:60]}")
             else:
                 continue
 
@@ -112,8 +118,17 @@ async def handler(websocket):
         await leave_channel(websocket, channel, nick)
 
 async def main():
-    print(f"CheckSim Relay starting on port {PORT}", flush=True)
-    async with websockets.serve(handler, "0.0.0.0", PORT, ping_interval=20, ping_timeout=10):
+    print("=" * 50, flush=True)
+    print("  CheckSim Relay Сервер", flush=True)
+    print(f"  Порт: {PORT}", flush=True)
+    print("=" * 50, flush=True)
+    print("", flush=True)
+
+    async with websockets.serve(
+        handler, "0.0.0.0", PORT,
+        ping_interval=20, ping_timeout=10
+    ):
+        log("Сервер запущен, ожидаю подключений...")
         await asyncio.Future()
 
 if __name__ == "__main__":
