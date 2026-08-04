@@ -4,7 +4,7 @@ import json
 import datetime
 import os
 
-PORT = int(os.environ.get("PORT", 8765))
+PORT = int(os.environ.get("PORT", 8080))
 
 # канал -> список подключений
 CHANNELS = {}
